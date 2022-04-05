@@ -1,5 +1,6 @@
 import 'dart:io';
-
+import 'dart:math';
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -34,16 +35,92 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _getCount() async {
-    final interpreter = await tfl.Interpreter.fromAsset('assetName');
-    var tensorImage = TensorImage.fromFile(_image!);
-    ImageProcessor imageProcessor = ImageProcessorBuilder()
-        .add(
-          ResizeOp(640, 640, ResizeMethod.NEAREST_NEIGHBOUR),
-        )
-        .build();
-    tensorImage = imageProcessor.process(tensorImage);
-    var output = interpreter.getOutputTensor(0);
-    interpreter.run(tensorImage, output);
+    var labels = await FileUtil.loadLabels('assets/labels.txt');
+    print(labels);
+
+    try {
+      // Create interpreter from asset.
+      tfl.Interpreter interpreter = await tfl.Interpreter.fromAsset(
+        "best-fp16.tflite",
+        options: tfl.InterpreterOptions(),
+      );
+
+      var inputShape = interpreter.getInputTensor(0).shape;
+      var inputType = interpreter.getInputTensor(0).type;
+      var outputShape = interpreter.getOutputTensor(0).shape;
+      var outputDataType = interpreter.getOutputTensor(0).type;
+
+      // Create a TensorImage object from a File
+      TensorImage tensorImage = TensorImage(inputType);
+      img.Image imageInput = img.decodeImage(_image!.readAsBytesSync())!;
+      tensorImage.loadImage(imageInput);
+
+      var cropSize = min(
+        tensorImage.height,
+        tensorImage.width,
+      );
+
+      // Initialization code
+      ImageProcessor imageProcessor = ImageProcessorBuilder()
+          .add(
+            ResizeWithCropOrPadOp(
+              cropSize,
+              cropSize,
+            ),
+          )
+          // Resize using Bilinear or Nearest neighbour
+          .add(
+            ResizeOp(
+              640,
+              640,
+              ResizeMethod.NEAREST_NEIGHBOUR,
+            ),
+          )
+          .add(
+            QuantizeOp(0, 0.0),
+          )
+          .add(
+            NormalizeOp(
+              127.5,
+              127.5,
+            ),
+          )
+          .build();
+
+      // Preprocess the image.
+      tensorImage = imageProcessor.process(tensorImage);
+
+      var outputBuffer = TensorBuffer.createFixedSize(
+        outputShape,
+        outputDataType,
+      );
+
+      var input = tensorImage.buffer;
+      var output = outputBuffer.getBuffer();
+
+      interpreter.run(
+        input,
+        output,
+      );
+
+      print(inputShape);
+      print(interpreter.getOutputTensor(0));
+
+      var _probabilityProcessor = TensorProcessorBuilder()
+          .add(
+            NormalizeOp(
+              127.5,
+              127.5,
+            ),
+          )
+          .build();
+      Map<String, double> labeledProb = TensorLabel.fromList(
+              labels, _probabilityProcessor.process(outputBuffer))
+          .getMapWithFloatValue();
+      print('labeledProb: $labeledProb');
+    } catch (e) {
+      print('Error loading model: ' + e.toString());
+    }
   }
 
   @override
