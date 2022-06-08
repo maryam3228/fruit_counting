@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'package:fruit_counting/image_screen.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,10 +35,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _getCount() async {
-    var labels = await FileUtil.loadLabels('assets/labels.txt');
-    print(labels);
-
+  Future<void> _getCount() async {
     try {
       // Create interpreter from asset.
       tfl.Interpreter interpreter = await tfl.Interpreter.fromAsset(
@@ -45,7 +43,6 @@ class _HomePageState extends State<HomePage> {
         options: tfl.InterpreterOptions(),
       );
 
-      var inputShape = interpreter.getInputTensor(0).shape;
       var inputType = interpreter.getInputTensor(0).type;
       var outputShape = interpreter.getOutputTensor(0).shape;
       var outputDataType = interpreter.getOutputTensor(0).type;
@@ -103,23 +100,15 @@ class _HomePageState extends State<HomePage> {
         output,
       );
 
-      print(inputShape);
-      print(interpreter.getOutputTensor(0));
-
-      var _probabilityProcessor = TensorProcessorBuilder()
-          .add(
-            NormalizeOp(
-              127.5,
-              127.5,
-            ),
-          )
-          .build();
-      Map<String, double> labeledProb = TensorLabel.fromList(
-              labels, _probabilityProcessor.process(outputBuffer))
-          .getMapWithFloatValue();
-      print('labeledProb: $labeledProb');
+      interpreter.close();
     } catch (e) {
-      print('Error loading model: ' + e.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error loading model: ' + e.toString(),
+          ),
+        ),
+      );
     }
   }
 
@@ -135,16 +124,20 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           children: [
             Container(
+              width: MediaQuery.of(context).size.width * 0.5,
+              height: MediaQuery.of(context).size.height * 0.5,
               decoration: BoxDecoration(
                 border: Border.all(),
-                borderRadius: const BorderRadius.all(
-                  Radius.circular(12.0),
-                ),
               ),
               child: _image != null
-                  ? Image.file(_image!)
-                  : const Text(
-                      'No image selected.',
+                  ? Image.file(
+                      _image!,
+                      fit: BoxFit.fill,
+                    )
+                  : const Center(
+                      child: Text(
+                        'No image selected.',
+                      ),
                     ),
             ),
             const SizedBox(
@@ -191,8 +184,15 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
-              onPressed: () {
-                _getCount();
+              onPressed: () async {
+                // await _getCount();
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) {
+                      return const ImageScreen();
+                    },
+                  ),
+                );
               },
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
